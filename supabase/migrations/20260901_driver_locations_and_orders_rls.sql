@@ -52,15 +52,15 @@ CREATE POLICY "driver_locations: driver can update own row"
   ON public.driver_locations
   FOR UPDATE
   TO authenticated
-  USING (auth.uid() = driver_id)
-  WITH CHECK (auth.uid() = driver_id);
+      USING (auth.uid()::text = driver_id::text)
+  WITH CHECK (auth.uid()::text = driver_id::text);
 
 -- Drivers can select their own row
 CREATE POLICY "driver_locations: driver can select own row"
   ON public.driver_locations
   FOR SELECT
   TO authenticated
-  USING (auth.uid() = driver_id);
+  USING (auth.uid()::text = driver_id::text);
 
 -- A driver can also read location rows linked to their own orders
 -- (redundant safety — the customer-facing read policy lives in the customer app migrations)
@@ -70,7 +70,7 @@ CREATE POLICY "driver_locations: readable for order driver"
   TO authenticated
   USING (
     order_id IN (
-      SELECT id FROM public.orders WHERE driver_id = auth.uid()
+      SELECT id FROM public.orders WHERE driver_id::text = auth.uid()::text
     )
   );
 
@@ -99,7 +99,7 @@ BEGIN
       USING (
         status = 'Pending'
         AND driver_id IS NULL
-        AND EXISTS (SELECT 1 FROM public.drivers WHERE id = auth.uid())
+        AND EXISTS (SELECT 1 FROM public.drivers WHERE id::text = auth.uid()::text)
       );
   END IF;
 END $$;
@@ -118,8 +118,8 @@ BEGIN
       FOR SELECT
       TO authenticated
       USING (
-        driver_id = auth.uid()
-        AND EXISTS (SELECT 1 FROM public.drivers WHERE id = auth.uid())
+        driver_id::text = auth.uid()::text
+        AND EXISTS (SELECT 1 FROM public.drivers WHERE id::text = auth.uid()::text)
       );
   END IF;
 END $$;
@@ -138,12 +138,12 @@ BEGIN
       FOR UPDATE
       TO authenticated
       USING (
-        (driver_id IS NULL OR driver_id = auth.uid())
-        AND EXISTS (SELECT 1 FROM public.drivers WHERE id = auth.uid())
+        (driver_id IS NULL OR driver_id::text = auth.uid()::text)
+        AND EXISTS (SELECT 1 FROM public.drivers WHERE id::text = auth.uid()::text)
       )
       WITH CHECK (
-        driver_id = auth.uid()
-        AND EXISTS (SELECT 1 FROM public.drivers WHERE id = auth.uid())
+        driver_id::text = auth.uid()::text
+        AND EXISTS (SELECT 1 FROM public.drivers WHERE id::text = auth.uid()::text)
       );
   END IF;
 END $$;

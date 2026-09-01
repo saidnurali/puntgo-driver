@@ -49,14 +49,14 @@ BEGIN
       TO authenticated
       USING (
         -- Row must already belong to this driver
-        driver_id = auth.uid()
+        driver_id::text = auth.uid()::text
         -- And the caller must be a driver (not a customer)
-        AND EXISTS (SELECT 1 FROM public.drivers WHERE id = auth.uid())
+        AND EXISTS (SELECT 1 FROM public.drivers WHERE id::text = auth.uid()::text)
       )
       WITH CHECK (
         -- After update: driver_id must still be auth.uid() (can't reassign)
-        driver_id = auth.uid()
-        AND EXISTS (SELECT 1 FROM public.drivers WHERE id = auth.uid())
+        driver_id::text = auth.uid()::text
+        AND EXISTS (SELECT 1 FROM public.drivers WHERE id::text = auth.uid()::text)
       );
   END IF;
 END $$;

@@ -29,7 +29,7 @@ BEGIN
   -- Only apply this restriction to users who are drivers.
   -- Backend services (service_role) or customers bypass this.
   -- auth.uid() matches a row in public.drivers for driver users.
-  IF auth.role() = 'authenticated' AND EXISTS (SELECT 1 FROM public.drivers WHERE id = auth.uid()) THEN
+  IF auth.role() = 'authenticated' AND EXISTS (SELECT 1 FROM public.drivers WHERE id::text = auth.uid()::text) THEN
     
     -- Check protected columns for changes using IS DISTINCT FROM
     -- This ensures NULL to NULL is not treated as a change, etc.

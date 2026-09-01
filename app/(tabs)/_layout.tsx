@@ -1,33 +1,51 @@
 import { Tabs } from 'expo-router';
-import { View, StyleSheet } from 'react-native';
-import { Colors, FontSize } from '../../constants/theme';
-// Lucide icons
-import { Home, Car, DollarSign, User } from 'lucide-react-native';
+import { View, StyleSheet, Platform } from 'react-native';
+import { Home, ClipboardList, DollarSign, User } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+const BRAND_GREEN = '#1F933F';
+const TAB_INACTIVE = '#9CA3AF';
+const BG_WHITE = '#FFFFFF';
 
 function TabIcon({ Icon, focused }: { Icon: any; focused: boolean }) {
   return (
-    <View style={[styles.iconWrapper, focused && styles.iconWrapperActive]}>
+    <View style={styles.iconWrapper}>
       <Icon
-        size={22}
-        color={focused ? Colors.primary : Colors.tabInactive}
-        strokeWidth={focused ? 2.5 : 1.8}
+        size={24}
+        color={focused ? BRAND_GREEN : TAB_INACTIVE}
+        strokeWidth={focused ? 2.5 : 2}
       />
     </View>
   );
 }
 
 export default function TabsLayout() {
+  const insets = useSafeAreaInsets();
+
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarStyle: styles.tabBar,
-        tabBarActiveTintColor: Colors.tabActive,
-        tabBarInactiveTintColor: Colors.tabInactive,
+        tabBarStyle: {
+          position: 'absolute',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          elevation: 8,
+          backgroundColor: '#FFFFFF',
+          borderTopWidth: 1,
+          borderTopColor: '#F0F0F0',
+          height: 60 + Math.max(insets.bottom, 12),
+          paddingBottom: Math.max(insets.bottom, 12),
+          paddingTop: 8,
+        },
+        tabBarActiveTintColor: BRAND_GREEN,
+        tabBarInactiveTintColor: TAB_INACTIVE,
         tabBarLabelStyle: styles.tabLabel,
         tabBarBackground: () => <View style={styles.tabBarBg} />,
       }}
     >
+      {/* ── Visible 4 tabs ── */}
       <Tabs.Screen
         name="index"
         options={{
@@ -36,10 +54,10 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
-        name="active-ride"
+        name="active-order"
         options={{
-          title: 'Active Ride',
-          tabBarIcon: ({ focused }) => <TabIcon Icon={Car} focused={focused} />,
+          title: 'Orders',
+          tabBarIcon: ({ focused }) => <TabIcon Icon={ClipboardList} focused={focused} />,
         }}
       />
       <Tabs.Screen
@@ -56,36 +74,44 @@ export default function TabsLayout() {
           tabBarIcon: ({ focused }) => <TabIcon Icon={User} focused={focused} />,
         }}
       />
+
+      {/* ── Hidden screens (no tab button) ── */}
+      <Tabs.Screen
+        name="active-ride"
+        options={{
+          href: null, // Completely removes it from the tab bar
+        }}
+      />
     </Tabs>
   );
 }
 
 const styles = StyleSheet.create({
   tabBar: {
-    backgroundColor: Colors.surface,
+    backgroundColor: BG_WHITE,
     borderTopWidth: 1,
-    borderTopColor: Colors.surfaceBorder,
-    height: 70,
-    paddingBottom: 10,
-    paddingTop: 8,
+    borderTopColor: '#F3F4F6',
+    height: Platform.OS === 'ios' ? 88 : 68,
+    paddingBottom: Platform.OS === 'ios' ? 28 : 10,
+    paddingTop: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 6,
   },
   tabBarBg: {
     flex: 1,
-    backgroundColor: Colors.surface,
+    backgroundColor: BG_WHITE,
   },
   tabLabel: {
-    fontSize: FontSize.xs,
+    fontSize: 11,
     fontWeight: '600',
     marginTop: 2,
   },
   iconWrapper: {
-    width: 40,
-    height: 32,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 10,
-  },
-  iconWrapperActive: {
-    backgroundColor: `${Colors.primary}22`,
+    marginBottom: 2,
   },
 });

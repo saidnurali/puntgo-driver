@@ -9,18 +9,18 @@ import {
   Dimensions,
 } from 'react-native';
 import { Colors, FontSize, FontWeight, Radius, Spacing } from '../constants/theme';
-import { Ride } from '../contexts/RideContext';
+import { Order } from '../contexts/OrderContext';
 
 const { width } = Dimensions.get('window');
 
-interface RideRequestModalProps {
-  ride: Ride | null;
+interface OrderRequestModalProps {
+  order: Order | null;
   visible: boolean;
   onAccept: () => void;
   onDecline: () => void;
 }
 
-export default function RideRequestModal({ ride, visible, onAccept, onDecline }: RideRequestModalProps) {
+export default function OrderRequestModal({ order, visible, onAccept, onDecline }: OrderRequestModalProps) {
   const slideAnim = useRef(new Animated.Value(300)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
 
@@ -38,10 +38,13 @@ export default function RideRequestModal({ ride, visible, onAccept, onDecline }:
     }
   }, [visible]);
 
-  if (!ride) return null;
+  if (!order) return null;
 
-  const fareDisplay = `$${ride.estimated_fare?.toFixed(2) ?? '0.00'}`;
-  const distanceDisplay = `${ride.distance_km?.toFixed(1) ?? '0'} km`;
+  const fareDisplay = `$${order.total_price?.toFixed(2) ?? '0.00'}`;
+  const itemsCount = Array.isArray(order.items) ? order.items.length : 0;
+  
+  const restaurantName = order.restaurant_name || order.restaurant || 'Unknown Restaurant';
+  const deliveryAddress = order.delivery_address || order.address || 'Unknown Address';
 
   return (
     <Modal transparent animationType="none" visible={visible}>
@@ -50,7 +53,7 @@ export default function RideRequestModal({ ride, visible, onAccept, onDecline }:
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.pulseDot} />
-            <Text style={styles.headerText}>New Ride Request!</Text>
+            <Text style={styles.headerText}>New Order Request!</Text>
             <View style={styles.fareBadge}>
               <Text style={styles.fareText}>{fareDisplay}</Text>
             </View>
@@ -59,19 +62,21 @@ export default function RideRequestModal({ ride, visible, onAccept, onDecline }:
           {/* Divider */}
           <View style={styles.divider} />
 
-          {/* Passenger info */}
-          <View style={styles.passengerRow}>
+          {/* Restaurant info */}
+          <View style={styles.restaurantRow}>
             <View style={styles.avatar}>
               <Text style={styles.avatarText}>
-                {ride.passenger_name?.charAt(0)?.toUpperCase() ?? 'P'}
+                🍽️
               </Text>
             </View>
-            <View>
-              <Text style={styles.passengerName}>{ride.passenger_name ?? 'Passenger'}</Text>
-              <Text style={styles.passengerPhone}>{ride.passenger_phone ?? ''}</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.restaurantName} numberOfLines={1}>{restaurantName}</Text>
+              <Text style={styles.itemsCount}>{itemsCount} {itemsCount === 1 ? 'item' : 'items'}</Text>
             </View>
-            <View style={styles.distanceBadge}>
-              <Text style={styles.distanceText}>{distanceDisplay}</Text>
+            <View style={styles.idBadge}>
+              <Text style={styles.idText}>
+                {String(order.id).startsWith('#') ? order.id : `#PG${order.id}`}
+              </Text>
             </View>
           </View>
 
@@ -80,9 +85,9 @@ export default function RideRequestModal({ ride, visible, onAccept, onDecline }:
             <View style={styles.routeRow}>
               <View style={[styles.routeDot, { backgroundColor: Colors.primary }]} />
               <View style={styles.routeInfo}>
-                <Text style={styles.routeLabel}>PICKUP</Text>
+                <Text style={styles.routeLabel}>PICKUP FROM</Text>
                 <Text style={styles.routeAddress} numberOfLines={2}>
-                  {ride.pickup_address ?? 'Pickup location'}
+                  {restaurantName}
                 </Text>
               </View>
             </View>
@@ -90,9 +95,9 @@ export default function RideRequestModal({ ride, visible, onAccept, onDecline }:
             <View style={styles.routeRow}>
               <View style={[styles.routeDot, { backgroundColor: Colors.danger }]} />
               <View style={styles.routeInfo}>
-                <Text style={styles.routeLabel}>DROP-OFF</Text>
+                <Text style={styles.routeLabel}>DELIVER TO</Text>
                 <Text style={styles.routeAddress} numberOfLines={2}>
-                  {ride.dropoff_address ?? 'Destination'}
+                  {deliveryAddress}
                 </Text>
               </View>
             </View>
@@ -168,7 +173,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surfaceBorder,
     marginBottom: Spacing.md,
   },
-  passengerRow: {
+  restaurantRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.sm,
@@ -178,32 +183,32 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: Colors.primary,
+    backgroundColor: Colors.surfaceElevated,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
   },
   avatarText: {
-    color: Colors.textInverse,
-    fontSize: FontSize.lg,
-    fontWeight: FontWeight.bold,
+    fontSize: 20,
   },
-  passengerName: {
+  restaurantName: {
     fontSize: FontSize.md,
     fontWeight: FontWeight.bold,
     color: Colors.textPrimary,
   },
-  passengerPhone: {
+  itemsCount: {
     fontSize: FontSize.xs,
     color: Colors.textSecondary,
   },
-  distanceBadge: {
+  idBadge: {
     marginLeft: 'auto',
     backgroundColor: Colors.surfaceElevated,
     borderRadius: Radius.sm,
     paddingHorizontal: Spacing.sm,
     paddingVertical: 4,
   },
-  distanceText: {
+  idText: {
     color: Colors.textSecondary,
     fontSize: FontSize.sm,
     fontWeight: FontWeight.medium,

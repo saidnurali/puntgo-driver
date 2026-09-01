@@ -1,448 +1,351 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   TouchableOpacity,
-  TextInput,
+  ScrollView,
+  Image,
   Alert,
-  RefreshControl,
-  Switch,
+  Linking,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useAuth } from '../../contexts/AuthContext';
-import { useRide } from '../../contexts/RideContext';
-import { supabase } from '../../lib/supabase';
-import { Colors, FontSize, FontWeight, Radius, Spacing } from '../../constants/theme';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
+import { useAuth } from '../../contexts/AuthContext';
+import { useOrder } from '../../contexts/OrderContext';
+import { Star, ChevronRight, HeadphonesIcon, LogOut, User } from 'lucide-react-native';
+
+const BRAND_GREEN = '#1F933F';
+const DARK_TEXT = '#111827';
+const GREY_TEXT = '#6B7280';
+const BORDER = '#E5E7EB';
+const LIGHT_BG = '#F9FAFB';
 
 export default function ProfileScreen() {
+  const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { user, signOut } = useAuth();
-  const { driverProfile, refreshProfile } = useRide();
-  const [refreshing, setRefreshing] = useState(false);
-  const [editMode, setEditMode] = useState(false);
-  const [vehicleModel, setVehicleModel] = useState(driverProfile?.vehicle_model ?? '');
-  const [vehiclePlate, setVehiclePlate] = useState(driverProfile?.vehicle_plate ?? '');
-  const [saving, setSaving] = useState(false);
+  const { signOut } = useAuth();
+  const { driverProfile, driverStatus, todayEarnings, todayDeliveries } = useOrder();
 
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await refreshProfile();
-    setRefreshing(false);
+  const handleSupport = () => {
+    // Attempt to open WhatsApp or Phone for support
+    // Here we just dial a dummy support number for demonstration
+    Linking.openURL('tel:+252612345678').catch(() => {
+      Alert.alert('Error', 'Unable to open phone dialer. This feature may not be available on simulators.');
+    });
   };
 
-  const handleSaveVehicle = async () => {
-    if (!user) return;
-    setSaving(true);
-    const { error } = await supabase
-      .from('drivers')
-      .update({ vehicle_model: vehicleModel, vehicle_plate: vehiclePlate })
-      .eq('id', user.id);
-    setSaving(false);
-    if (error) {
-      Alert.alert('Error', error.message);
-    } else {
-      await refreshProfile();
-      setEditMode(false);
-      Alert.alert('Saved', 'Vehicle info updated successfully.');
-    }
+  const handleLogout = () => {
+    Alert.alert(
+      'Log Out',
+      'Are you sure you want to log out of your driver account?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Log Out', 
+          style: 'destructive',
+          onPress: async () => {
+            await signOut();
+            router.replace('/(auth)/login');
+          }
+        }
+      ]
+    );
   };
 
-  const handleSignOut = () => {
-    Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Sign Out',
-        style: 'destructive',
-        onPress: async () => {
-          await signOut();
-          router.replace('/(auth)/login');
-        },
-      },
-    ]);
-  };
-
-  const rating = driverProfile?.rating?.toFixed(1) ?? '5.0';
-  const stars = Math.round(driverProfile?.rating ?? 5);
+  if (!driverProfile) {
+    return (
+      <View style={[styles.safe, { justifyContent: 'center', alignItems: 'center' }]}>
+        <Text>Loading profile...</Text>
+      </View>
+    );
+  }
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <ScrollView
-        style={styles.scroll}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} colors={[Colors.primary]} />
-        }
-      >
-        {/* Profile Hero */}
-        <View style={styles.hero}>
-          <View style={styles.avatarContainer}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>
-                {driverProfile?.full_name?.charAt(0)?.toUpperCase() ?? '?'}
-              </Text>
-            </View>
-            <View style={styles.onlineIndicator} />
-          </View>
-          <Text style={styles.name}>{driverProfile?.full_name ?? user?.email?.split('@')[0]}</Text>
-          <Text style={styles.email}>{user?.email}</Text>
-          <Text style={styles.phone}>{driverProfile?.phone ?? 'No phone set'}</Text>
-
-          {/* Rating Stars */}
-          <View style={styles.starsRow}>
-            {[1, 2, 3, 4, 5].map((s) => (
-              <Text key={s} style={[styles.star, s <= stars && styles.starActive]}>★</Text>
-            ))}
-            <Text style={styles.ratingLabel}>{rating} / 5.0</Text>
-          </View>
-        </View>
-
-        {/* Stats Bar */}
-        <View style={styles.statsBar}>
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>{driverProfile?.total_rides ?? 0}</Text>
-            <Text style={styles.statLabel}>Total Rides</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>${(driverProfile?.total_earnings ?? 0).toFixed(0)}</Text>
-            <Text style={styles.statLabel}>Total Earned</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>{rating}</Text>
-            <Text style={styles.statLabel}>Rating</Text>
-          </View>
-        </View>
-
-        {/* Vehicle Info */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Vehicle Information</Text>
-            <TouchableOpacity onPress={() => setEditMode(!editMode)}>
-              <Text style={styles.editLink}>{editMode ? 'Cancel' : 'Edit'}</Text>
-            </TouchableOpacity>
-          </View>
-
-          {editMode ? (
-            <View style={styles.editCard}>
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Vehicle Model</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="e.g. Toyota Camry 2020"
-                  placeholderTextColor={Colors.textMuted}
-                  value={vehicleModel}
-                  onChangeText={setVehicleModel}
-                />
-              </View>
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>License Plate</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="e.g. GAR-1234"
-                  placeholderTextColor={Colors.textMuted}
-                  value={vehiclePlate}
-                  onChangeText={setVehiclePlate}
-                  autoCapitalize="characters"
-                />
-              </View>
-              <TouchableOpacity
-                style={[styles.saveBtn, saving && styles.saveBtnDisabled]}
-                onPress={handleSaveVehicle}
-                disabled={saving}
-              >
-                <Text style={styles.saveBtnText}>{saving ? 'Saving...' : 'Save Changes'}</Text>
-              </TouchableOpacity>
-            </View>
+    <View style={styles.container}>
+      <StatusBar style="light" />
+      
+      {/* ── HERO HEADER ── */}
+      <View style={[styles.heroHeader, { paddingTop: Math.max(insets.top, 40) }]}>
+        <View style={styles.heroContent}>
+          {driverProfile.profile_photo ? (
+            <Image 
+              source={{ uri: driverProfile.profile_photo }} 
+              style={styles.avatar} 
+            />
           ) : (
-            <View style={styles.infoCard}>
-              <InfoRow icon="🚗" label="Vehicle" value={driverProfile?.vehicle_model ?? 'Not set'} />
-              <InfoRow icon="🔢" label="Plate" value={driverProfile?.vehicle_plate ?? 'Not set'} />
+            <View style={styles.avatarPlaceholder}>
+              <User size={40} color="#FFF" />
             </View>
           )}
+          
+          <View style={styles.heroTextContainer}>
+            <Text style={styles.driverName}>{driverProfile.full_name}</Text>
+            <View style={styles.ratingBadge}>
+              <Star size={14} color="#FCD34D" fill="#FCD34D" />
+              <Text style={styles.ratingText}>{driverProfile.rating?.toFixed(1) || '5.0'}</Text>
+            </View>
+          </View>
         </View>
+      </View>
 
-        {/* Account Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Account</Text>
-          <View style={styles.infoCard}>
-            <InfoRow icon="✉️" label="Email" value={user?.email ?? 'N/A'} />
-            <InfoRow icon="📱" label="Phone" value={driverProfile?.phone ?? 'Not set'} />
-            <InfoRow
-              icon="✅"
-              label="Email Verified"
-              value={user?.email_confirmed_at ? 'Verified' : 'Not verified'}
-              valueColor={user?.email_confirmed_at ? Colors.success : Colors.warning}
-            />
+      <ScrollView 
+        contentContainerStyle={[styles.scroll, { paddingBottom: 90 + insets.bottom }]}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* ── DETAILS CARD ── */}
+        <View style={styles.card}>
+          <View style={styles.detailRow}>
+            <Text style={styles.detailLabel}>Phone Number</Text>
+            <Text style={styles.detailValue}>{driverProfile.phone}</Text>
+          </View>
+          <View style={styles.divider} />
+          
+          <View style={styles.detailRow}>
+            <Text style={styles.detailLabel}>Vehicle Type</Text>
+            <Text style={styles.detailValue}>{driverProfile.vehicle_model || 'Motorcycle'}</Text>
+          </View>
+          <View style={styles.divider} />
+          
+          <View style={styles.detailRow}>
+            <Text style={styles.detailLabel}>Vehicle Number</Text>
+            <Text style={styles.detailValue}>{driverProfile.vehicle_plate || 'N/A'}</Text>
+          </View>
+          <View style={styles.divider} />
+          
+          <View style={styles.detailRow}>
+            <Text style={styles.detailLabel}>Account Status</Text>
+            <View style={styles.statusPill}>
+              <Text style={styles.statusPillText}>
+                {driverStatus === 'online' ? 'Active' : 'Offline'}
+              </Text>
+            </View>
           </View>
         </View>
 
-        {/* App Info */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>App Info</Text>
-          <View style={styles.infoCard}>
-            <InfoRow icon="📦" label="Version" value="1.0.0" />
-            <InfoRow icon="🌍" label="Region" value="Garowe, Puntland" />
-            <InfoRow icon="🏢" label="Operator" value="PuntGo" />
+        {/* ── TODAY'S METRICS CARD ── */}
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>Today's Metrics</Text>
+          <View style={styles.statsRow}>
+            <View style={styles.statBox}>
+              <Text style={styles.statLabel}>Deliveries</Text>
+              <Text style={styles.statValue}>{todayDeliveries}</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statBox}>
+              <Text style={styles.statLabel}>Earnings</Text>
+              <Text style={styles.statValue}>${todayEarnings.toFixed(2)}</Text>
+            </View>
           </View>
         </View>
 
-        {/* Sign Out */}
-        <View style={styles.section}>
-          <TouchableOpacity style={styles.signOutBtn} onPress={handleSignOut} activeOpacity={0.85}>
-            <Text style={styles.signOutText}>🚪  Sign Out</Text>
+        {/* ── ACTION MENU CARD ── */}
+        <View style={styles.actionCard}>
+          <TouchableOpacity 
+            style={styles.actionRow} 
+            onPress={handleSupport}
+            activeOpacity={0.7}
+          >
+            <View style={styles.actionRowLeft}>
+              <HeadphonesIcon size={20} color={DARK_TEXT} />
+              <Text style={styles.actionLabel}>Support</Text>
+            </View>
+            <ChevronRight size={20} color={GREY_TEXT} />
+          </TouchableOpacity>
+          
+          <View style={styles.divider} />
+
+          <TouchableOpacity 
+            style={styles.actionRow} 
+            onPress={handleLogout}
+            activeOpacity={0.7}
+          >
+            <View style={styles.actionRowLeft}>
+              <LogOut size={20} color="#EF4444" />
+              <Text style={[styles.actionLabel, { color: '#EF4444' }]}>Logout</Text>
+            </View>
+            <ChevronRight size={20} color={GREY_TEXT} />
           </TouchableOpacity>
         </View>
-
-        <View style={{ height: 30 }} />
       </ScrollView>
-    </SafeAreaView>
-  );
-}
-
-function InfoRow({
-  icon,
-  label,
-  value,
-  valueColor,
-}: {
-  icon: string;
-  label: string;
-  value: string;
-  valueColor?: string;
-}) {
-  return (
-    <View style={infoStyles.row}>
-      <Text style={infoStyles.icon}>{icon}</Text>
-      <Text style={infoStyles.label}>{label}</Text>
-      <Text style={[infoStyles.value, valueColor ? { color: valueColor } : undefined]}>
-        {value}
-      </Text>
     </View>
   );
 }
 
-const infoStyles = StyleSheet.create({
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.surfaceBorder,
-    gap: Spacing.sm,
-  },
-  icon: { fontSize: 18, width: 28 },
-  label: {
-    flex: 1,
-    fontSize: FontSize.sm,
-    color: Colors.textSecondary,
-    fontWeight: FontWeight.medium,
-  },
-  value: {
-    fontSize: FontSize.sm,
-    color: Colors.textPrimary,
-    fontWeight: FontWeight.semibold,
-    maxWidth: '55%',
-    textAlign: 'right',
-  },
-});
-
 const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: LIGHT_BG,
+  },
   safe: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: LIGHT_BG,
   },
-  scroll: { flex: 1 },
-  hero: {
+  heroHeader: {
+    backgroundColor: BRAND_GREEN,
+    paddingHorizontal: 24,
+    paddingBottom: 40,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+    shadowColor: BRAND_GREEN,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.1,
+    shadowRadius: 20,
+    elevation: 10,
+    zIndex: 10,
+  },
+  heroContent: {
+    flexDirection: 'row',
     alignItems: 'center',
-    paddingTop: Spacing.xl,
-    paddingBottom: Spacing.lg,
-    paddingHorizontal: Spacing.lg,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.surfaceBorder,
-    marginBottom: Spacing.md,
-  },
-  avatarContainer: {
-    position: 'relative',
-    marginBottom: Spacing.md,
+    marginTop: 20,
   },
   avatar: {
-    width: 90,
-    height: 90,
-    borderRadius: 45,
-    backgroundColor: Colors.primary,
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    borderWidth: 3,
+    borderColor: '#FFF',
+  },
+  avatarPlaceholder: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderWidth: 3,
+    borderColor: '#FFF',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: Colors.primary,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.5,
-    shadowRadius: 20,
-    elevation: 12,
   },
-  avatarText: {
-    fontSize: 36,
-    fontWeight: FontWeight.extrabold,
-    color: Colors.textInverse,
+  heroTextContainer: {
+    marginLeft: 20,
   },
-  onlineIndicator: {
-    position: 'absolute',
-    bottom: 4,
-    right: 4,
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: Colors.online,
-    borderWidth: 2,
-    borderColor: Colors.background,
+  driverName: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#FFF',
+    marginBottom: 8,
   },
-  name: {
-    fontSize: FontSize.xxl,
-    fontWeight: FontWeight.extrabold,
-    color: Colors.textPrimary,
-    marginBottom: 4,
-  },
-  email: {
-    fontSize: FontSize.sm,
-    color: Colors.textSecondary,
-    marginBottom: 2,
-  },
-  phone: {
-    fontSize: FontSize.sm,
-    color: Colors.textSecondary,
-    marginBottom: Spacing.md,
-  },
-  starsRow: {
+  ratingBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 2,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    alignSelf: 'flex-start',
+    gap: 4,
   },
-  star: {
-    fontSize: 20,
-    color: Colors.surfaceBorder,
+  ratingText: {
+    color: '#FFF',
+    fontWeight: '700',
+    fontSize: 14,
   },
-  starActive: {
-    color: Colors.gold,
+  scroll: {
+    paddingHorizontal: 20,
+    paddingTop: 30,
   },
-  ratingLabel: {
-    fontSize: FontSize.sm,
-    color: Colors.textSecondary,
-    marginLeft: Spacing.sm,
-    fontWeight: FontWeight.medium,
-  },
-  statsBar: {
-    flexDirection: 'row',
-    marginHorizontal: Spacing.lg,
-    backgroundColor: Colors.surface,
-    borderRadius: Radius.lg,
+  card: {
+    backgroundColor: '#FFF',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 24,
     borderWidth: 1,
-    borderColor: Colors.surfaceBorder,
-    marginBottom: Spacing.lg,
-    overflow: 'hidden',
+    borderColor: BORDER,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 8,
+    elevation: 2,
   },
-  statItem: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: Spacing.md,
-  },
-  statValue: {
-    fontSize: FontSize.xl,
-    fontWeight: FontWeight.extrabold,
-    color: Colors.textPrimary,
-  },
-  statLabel: {
-    fontSize: FontSize.xs,
-    color: Colors.textSecondary,
-    marginTop: 2,
-  },
-  statDivider: {
-    width: 1,
-    backgroundColor: Colors.surfaceBorder,
-    marginVertical: Spacing.md,
-  },
-  section: {
-    paddingHorizontal: Spacing.lg,
-    marginBottom: Spacing.lg,
-  },
-  sectionHeader: {
+  detailRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: Spacing.sm,
+    paddingVertical: 14,
+  },
+  detailLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: DARK_TEXT,
+  },
+  detailValue: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: GREY_TEXT,
+  },
+  statusPill: {
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  statusPillText: {
+    color: BRAND_GREEN,
+    fontWeight: '600',
+    fontSize: 13,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#F3F4F6',
+  },
+  actionCard: {
+    backgroundColor: '#FFF',
+    borderRadius: 16,
+    paddingHorizontal: 20,
+    borderWidth: 1,
+    borderColor: BORDER,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  actionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 20,
+  },
+  actionRowLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  actionLabel: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: DARK_TEXT,
   },
   sectionTitle: {
-    fontSize: FontSize.sm,
-    fontWeight: FontWeight.semibold,
-    color: Colors.textSecondary,
-    letterSpacing: 0.8,
-    textTransform: 'uppercase',
-    marginBottom: Spacing.sm,
+    fontSize: 16,
+    fontWeight: '700',
+    color: DARK_TEXT,
+    marginBottom: 16,
   },
-  editLink: {
-    fontSize: FontSize.sm,
-    color: Colors.primary,
-    fontWeight: FontWeight.bold,
-    marginBottom: Spacing.sm,
+  statsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
-  infoCard: {
-    backgroundColor: Colors.surface,
-    borderRadius: Radius.lg,
-    paddingHorizontal: Spacing.md,
-    borderWidth: 1,
-    borderColor: Colors.surfaceBorder,
-    overflow: 'hidden',
-  },
-  editCard: {
-    backgroundColor: Colors.surface,
-    borderRadius: Radius.lg,
-    padding: Spacing.md,
-    borderWidth: 1,
-    borderColor: Colors.surfaceBorder,
-  },
-  inputGroup: {
-    marginBottom: Spacing.md,
-  },
-  inputLabel: {
-    fontSize: FontSize.xs,
-    color: Colors.textSecondary,
-    marginBottom: 4,
-    fontWeight: FontWeight.medium,
-  },
-  input: {
-    backgroundColor: Colors.surfaceElevated,
-    borderRadius: Radius.md,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: 12,
-    fontSize: FontSize.md,
-    color: Colors.textPrimary,
-    borderWidth: 1,
-    borderColor: Colors.surfaceBorder,
-  },
-  saveBtn: {
-    backgroundColor: Colors.primary,
-    borderRadius: Radius.md,
-    paddingVertical: 14,
+  statBox: {
+    flex: 1,
     alignItems: 'center',
   },
-  saveBtnDisabled: { opacity: 0.6 },
-  saveBtnText: {
-    color: Colors.textInverse,
-    fontSize: FontSize.md,
-    fontWeight: FontWeight.bold,
+  statDivider: {
+    width: 1,
+    height: 40,
+    backgroundColor: BORDER,
   },
-  signOutBtn: {
-    backgroundColor: `${Colors.danger}22`,
-    borderRadius: Radius.lg,
-    paddingVertical: 16,
-    alignItems: 'center',
-    borderWidth: 1.5,
-    borderColor: `${Colors.danger}44`,
+  statLabel: {
+    fontSize: 13,
+    color: GREY_TEXT,
+    fontWeight: '500',
+    marginBottom: 6,
   },
-  signOutText: {
-    color: Colors.danger,
-    fontSize: FontSize.md,
-    fontWeight: FontWeight.bold,
+  statValue: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: BRAND_GREEN,
   },
 });

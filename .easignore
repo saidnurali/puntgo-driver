@@ -1,0 +1,24 @@
+# Ignore generated native directories — EAS should run prebuild itself
+android/
+ios/
+
+# macOS artifacts
+.DS_Store
+
+# Local IDE / editor configs
+.idea/
+.claude/
+.vscode/
+
+# Build artifacts
+dist/
+.expo/
+
+# Debug scripts
+check_db.js
+check_triggers.js
+test-db.js
+test.sql
+
+# Git internals
+.git/

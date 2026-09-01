@@ -6,51 +6,45 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
+  Image,
+  Switch,
+  Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useAuth } from '../../contexts/AuthContext';
-import { useRide } from '../../contexts/RideContext';
-import StatusToggle from '../../components/StatusToggle';
-import StatCard from '../../components/StatCard';
-import RideRequestModal from '../../components/RideRequestModal';
-import { Colors, FontSize, FontWeight, Radius, Spacing } from '../../constants/theme';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useOrder } from '../../contexts/OrderContext';
 import { useRouter } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+import { Menu, Bell, PackageOpen } from 'lucide-react-native';
+
+const BRAND_GREEN = '#1F933F';
+const LIGHT_BG = '#FFFFFF';
+const DARK_TEXT = '#111827';
+const GREY_TEXT = '#6B7280';
+const BORDER_COLOR = '#F3F4F6';
 
 export default function HomeScreen() {
-  const { user } = useAuth();
+  const insets = useSafeAreaInsets();
   const {
     driverStatus,
     setDriverStatus,
     driverProfile,
-    pendingRide,
-    currentRide,
     todayEarnings,
-    todayRides,
-    acceptRide,
-    declineRide,
+    todayDeliveries,
+    activeOrders,
     refreshProfile,
-  } = useRide();
+  } = useOrder();
   const router = useRouter();
   const [refreshing, setRefreshing] = React.useState(false);
 
+  // Use AsyncStorage to get correct driver_is_online on load (will do this later in toggle logic)
   const isOnline = driverStatus === 'online';
 
-  const handleToggle = async (value: boolean) => {
-    await setDriverStatus(value ? 'online' : 'offline');
-  };
-
-  const handleAccept = async () => {
-    if (pendingRide) {
-      await acceptRide(pendingRide.id);
-      router.push('/(tabs)/active-ride');
-    }
-  };
-
-  const handleDecline = async () => {
-    if (pendingRide) {
-      await declineRide(pendingRide.id);
-    }
-  };
+  // 1. FIX ACTIVE DISPATCH CARD FILTERING
+  const activeIncompleteOrders = activeOrders.filter(o => 
+    ['pending', 'preparing', 'out for delivery', 'out_for_delivery']
+    .includes((o.status || '').toLowerCase())
+  );
+  const currentActiveOrder = activeIncompleteOrders[0];
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -58,292 +52,356 @@ export default function HomeScreen() {
     setRefreshing(false);
   };
 
-  const rating = driverProfile?.rating?.toFixed(1) ?? '5.0';
-  const totalRides = driverProfile?.total_rides ?? 0;
-  const weeklyEarnings = (todayEarnings * 5).toFixed(2); // rough estimate for display
+  const toggleOnline = async () => {
+    await setDriverStatus(isOnline ? 'offline' : 'online');
+  };
+
+  const avatarUrl = driverProfile?.profile_photo || 'https://ui-avatars.com/api/?name=' + (driverProfile?.full_name || 'Driver') + '&background=E5E7EB&color=6B7280';
+  const driverName = driverProfile?.full_name || 'Driver';
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={styles.safe} edges={['top']}>
+      <StatusBar style="dark" />
+      
+      {/* ── Top Header Bar ── */}
+      <View style={styles.headerContainer}>
+        {/* Row 1: Menu & Bell */}
+        <View style={styles.topIconRow}>
+          <TouchableOpacity style={styles.iconBtn}>
+            <Menu color={DARK_TEXT} size={24} />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.iconBtn}>
+            <View style={styles.bellBadge} />
+            <Bell color="#F97316" size={24} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Row 2: Greeting & Avatar */}
+        <View style={styles.greetingRow}>
+          <Text style={styles.greetingText}>Hello, {driverName}</Text>
+          <Image source={{ uri: avatarUrl }} style={styles.avatar} />
+        </View>
+
+        {/* ── Toggle Bar ── */}
+        <View style={styles.toggleBar}>
+          <View style={styles.toggleTextWrapper}>
+            <Text style={styles.toggleText}>{isOnline ? '🟢 Online' : '🔴 Offline'}</Text>
+          </View>
+          <Switch
+            value={isOnline}
+            onValueChange={toggleOnline}
+            trackColor={{ false: '#E5E7EB', true: BRAND_GREEN }}
+            thumbColor={'#FFFFFF'}
+            ios_backgroundColor="#E5E7EB"
+            style={Platform.OS === 'ios' ? { transform: [{ scaleX: 0.9 }, { scaleY: 0.9 }] } : undefined}
+          />
+        </View>
+
+        {/* ── Quick Stats ── */}
+        <View style={styles.statsRow}>
+          <View style={styles.statCard}>
+            <Text style={styles.statLabel}>Today's Earnings</Text>
+            <Text style={styles.statValue}>${todayEarnings.toFixed(2)}</Text>
+          </View>
+          <View style={styles.statCard}>
+            <Text style={styles.statLabel}>Deliveries Today</Text>
+            <Text style={styles.statValue}>{todayDeliveries}</Text>
+          </View>
+        </View>
+      </View>
+
       <ScrollView
-        style={styles.scroll}
+        contentContainerStyle={[styles.scroll, { paddingBottom: 90 + insets.bottom }]}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={Colors.primary}
-            colors={[Colors.primary]}
-          />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={BRAND_GREEN} />
         }
       >
-        {/* Header */}
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.greeting}>Good {getTimeOfDay()},</Text>
-            <Text style={styles.driverName}>
-              {driverProfile?.full_name ?? user?.email?.split('@')[0] ?? 'Driver'} 👋
-            </Text>
-          </View>
-          <View style={styles.ratingBadge}>
-            <Text style={styles.ratingStar}>⭐</Text>
-            <Text style={styles.ratingText}>{rating}</Text>
-          </View>
-        </View>
-
-        {/* Status Toggle */}
-        <StatusToggle isOnline={isOnline} onToggle={handleToggle} />
-
-        {/* Today's Stats */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Today's Summary</Text>
-          <View style={styles.statsRow}>
-            <StatCard
-              label="Earnings"
-              value={`$${todayEarnings.toFixed(2)}`}
-              icon="💰"
-              accent={Colors.gold}
+        {!isOnline ? (
+          /* ── OFFLINE STATE ── */
+          <View style={styles.offlineContainer}>
+            {/* Scooter Graphic Placeholder (using a generic URL or just styled UI) */}
+            <Image 
+              source={{ uri: 'https://cdn-icons-png.flaticon.com/512/3753/3753066.png' }} 
+              style={styles.scooterGraphic}
+              resizeMode="contain"
             />
-            <StatCard
-              label="Rides"
-              value={`${todayRides}`}
-              icon="🚗"
-              accent={Colors.primary}
-            />
-            <StatCard
-              label="Rating"
-              value={rating}
-              icon="⭐"
-              accent={Colors.warning}
-            />
-          </View>
-        </View>
-
-        {/* Current Ride Banner */}
-        {currentRide && (
-          <View style={styles.section}>
-            <TouchableOpacity
-              style={styles.activeRideBanner}
-              onPress={() => router.push('/(tabs)/active-ride')}
-              activeOpacity={0.85}
+            <Text style={styles.offlineTitle}>You are offline</Text>
+            <Text style={styles.offlineSub}>Go online to start receiving orders</Text>
+            
+            <TouchableOpacity 
+              style={styles.goOnlineBtn}
+              onPress={toggleOnline}
+              activeOpacity={0.8}
             >
-              <View style={styles.activeRidePulse} />
-              <View style={styles.activeRideInfo}>
-                <Text style={styles.activeRideLabel}>Active Ride</Text>
-                <Text style={styles.activeRidePassenger}>{currentRide.passenger_name}</Text>
-                <Text style={styles.activeRideAddress} numberOfLines={1}>
-                  📍 {currentRide.dropoff_address}
-                </Text>
-              </View>
-              <Text style={styles.activeRideArrow}>›</Text>
+              <Text style={styles.goOnlineBtnText}>Go Online</Text>
             </TouchableOpacity>
           </View>
-        )}
-
-        {/* Lifetime Stats */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>All Time</Text>
-          <View style={styles.lifetimeCard}>
-            <View style={styles.lifetimeStat}>
-              <Text style={styles.lifetimeValue}>{totalRides}</Text>
-              <Text style={styles.lifetimeLabel}>Total Rides</Text>
-            </View>
-            <View style={styles.lifetimeDivider} />
-            <View style={styles.lifetimeStat}>
-              <Text style={styles.lifetimeValue}>
-                ${(driverProfile?.total_earnings ?? 0).toFixed(0)}
-              </Text>
-              <Text style={styles.lifetimeLabel}>Total Earned</Text>
-            </View>
-            <View style={styles.lifetimeDivider} />
-            <View style={styles.lifetimeStat}>
-              <Text style={styles.lifetimeValue}>{rating}</Text>
-              <Text style={styles.lifetimeLabel}>Avg Rating</Text>
+        ) : (
+          /* ── ONLINE STATE ── */
+          <View style={styles.onlineContainer}>
+            {/* Active Order Card */}
+            <View style={styles.activeOrderCard}>
+              <Text style={styles.activeOrderHeader}>Active Dispatch</Text>
+              
+              {currentActiveOrder ? (
+                <View style={styles.activeOrderContent}>
+                  <View style={styles.orderIconBgActive}>
+                    <PackageOpen color={BRAND_GREEN} size={28} />
+                  </View>
+                  <Text style={styles.activeOrderTitle}>
+                    {currentActiveOrder?.restaurant_name || currentActiveOrder?.restaurant || 'Restaurant'}
+                  </Text>
+                  <Text style={styles.activeOrderSub}>
+                    Deliver to {currentActiveOrder?.delivery_address || currentActiveOrder?.address || 'Customer'}
+                  </Text>
+                  
+                  <TouchableOpacity 
+                    style={[styles.goOnlineBtn, { marginTop: 16, paddingVertical: 14, width: '100%', borderRadius: 12 }]}
+                    onPress={() => router.push({ pathname: '/(tabs)/active-order', params: { orderId: String(currentActiveOrder?.id ?? '') }})}
+                    activeOpacity={0.8}
+                  >
+                     <Text style={styles.goOnlineBtnText}>Manage Delivery</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <View style={styles.activeOrderContent}>
+                  <View style={styles.orderIconBg}>
+                    <PackageOpen color="#D1D5DB" size={32} />
+                  </View>
+                  <Text style={styles.emptyOrderTitle}>Finding Orders...</Text>
+                  <Text style={styles.emptyOrderSub}>
+                    You are online and ready to receive orders. Wait here.
+                  </Text>
+                </View>
+              )}
             </View>
           </View>
-        </View>
-
-        {/* Tips when offline */}
-        {!isOnline && (
-          <View style={styles.section}>
-            <View style={styles.tipCard}>
-              <Text style={styles.tipTitle}>💡 Ready to Earn?</Text>
-              <Text style={styles.tipText}>
-                Toggle the switch above to go online and start receiving ride requests in Garowe.
-              </Text>
-            </View>
-          </View>
         )}
-
-        <View style={{ height: 20 }} />
       </ScrollView>
-
-      {/* Incoming Ride Request Modal */}
-      <RideRequestModal
-        ride={pendingRide}
-        visible={!!pendingRide && isOnline}
-        onAccept={handleAccept}
-        onDecline={handleDecline}
-      />
     </SafeAreaView>
   );
-}
-
-function getTimeOfDay() {
-  const hour = new Date().getHours();
-  if (hour < 12) return 'Morning';
-  if (hour < 17) return 'Afternoon';
-  return 'Evening';
 }
 
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: LIGHT_BG,
   },
-  scroll: {
-    flex: 1,
+  headerContainer: {
+    paddingHorizontal: 24,
+    paddingTop: 10,
   },
-  header: {
+  topIconRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.md,
-    paddingBottom: Spacing.lg,
+    marginBottom: 20,
   },
-  greeting: {
-    fontSize: FontSize.sm,
-    color: Colors.textSecondary,
-    fontWeight: FontWeight.medium,
+  iconBtn: {
+    position: 'relative',
+    padding: 4,
+    marginLeft: -4, // Adjust for padding
   },
-  driverName: {
-    fontSize: FontSize.xxl,
-    fontWeight: FontWeight.extrabold,
-    color: Colors.textPrimary,
-    marginTop: 2,
+  bellBadge: {
+    position: 'absolute',
+    top: 6,
+    right: 4,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#EF4444', // Red dot
+    zIndex: 10,
+    borderWidth: 1.5,
+    borderColor: LIGHT_BG,
   },
-  ratingBadge: {
+  greetingRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  greetingText: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: DARK_TEXT,
+  },
+  avatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 2,
+    borderColor: '#DCFCE7', // Light green border
+    backgroundColor: '#F3F4F6',
+  },
+  toggleBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.surfaceElevated,
-    borderRadius: Radius.full,
-    paddingHorizontal: Spacing.md,
+    justifyContent: 'flex-end',
+    backgroundColor: '#F9FAFB',
+    borderRadius: 100,
     paddingVertical: 8,
-    gap: 4,
+    paddingHorizontal: 8,
     borderWidth: 1,
-    borderColor: Colors.surfaceBorder,
+    borderColor: '#E5E7EB',
+    marginBottom: 24,
+    position: 'relative',
+    height: 48,
   },
-  ratingStar: { fontSize: 14 },
-  ratingText: {
-    fontSize: FontSize.md,
-    fontWeight: FontWeight.bold,
-    color: Colors.textPrimary,
+  toggleTextWrapper: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  section: {
-    paddingHorizontal: Spacing.lg,
-    marginTop: Spacing.lg,
-  },
-  sectionTitle: {
-    fontSize: FontSize.sm,
-    fontWeight: FontWeight.semibold,
-    color: Colors.textSecondary,
-    letterSpacing: 0.8,
-    textTransform: 'uppercase',
-    marginBottom: Spacing.sm,
+  toggleText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: DARK_TEXT,
+    letterSpacing: 0.5,
   },
   statsRow: {
     flexDirection: 'row',
-    marginHorizontal: -4,
+    gap: 16,
+    marginBottom: 24,
   },
-  activeRideBanner: {
-    backgroundColor: `${Colors.primary}15`,
-    borderRadius: Radius.lg,
-    borderWidth: 1.5,
-    borderColor: Colors.primary,
-    padding: Spacing.md,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-  },
-  activeRidePulse: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: Colors.primary,
-    shadowColor: Colors.primary,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 1,
-    shadowRadius: 8,
-  },
-  activeRideInfo: { flex: 1 },
-  activeRideLabel: {
-    fontSize: FontSize.xs,
-    color: Colors.primary,
-    fontWeight: FontWeight.semibold,
-    letterSpacing: 0.6,
-    textTransform: 'uppercase',
-  },
-  activeRidePassenger: {
-    fontSize: FontSize.md,
-    fontWeight: FontWeight.bold,
-    color: Colors.textPrimary,
-  },
-  activeRideAddress: {
-    fontSize: FontSize.xs,
-    color: Colors.textSecondary,
-    marginTop: 2,
-  },
-  activeRideArrow: {
-    fontSize: 24,
-    color: Colors.primary,
-    fontWeight: FontWeight.bold,
-  },
-  lifetimeCard: {
-    backgroundColor: Colors.surface,
-    borderRadius: Radius.lg,
+  statCard: {
+    flex: 1,
+    backgroundColor: '#FFF',
+    borderRadius: 16,
+    padding: 16,
     borderWidth: 1,
-    borderColor: Colors.surfaceBorder,
-    flexDirection: 'row',
-    overflow: 'hidden',
+    borderColor: BORDER_COLOR,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.02,
+    shadowRadius: 8,
+    elevation: 2,
   },
-  lifetimeStat: {
+  statLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: GREY_TEXT,
+    marginBottom: 12,
+  },
+  statValue: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#9CA3AF',
+  },
+  scroll: {
+    flexGrow: 1,
+  },
+  
+  // Offline State
+  offlineContainer: {
     flex: 1,
     alignItems: 'center',
-    paddingVertical: Spacing.lg,
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    paddingBottom: 60,
   },
-  lifetimeValue: {
-    fontSize: FontSize.xxl,
-    fontWeight: FontWeight.extrabold,
-    color: Colors.textPrimary,
+  scooterGraphic: {
+    width: 200,
+    height: 160,
+    opacity: 0.6,
+    marginBottom: 24,
   },
-  lifetimeLabel: {
-    fontSize: FontSize.xs,
-    color: Colors.textSecondary,
-    marginTop: 4,
+  offlineTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: DARK_TEXT,
+    marginBottom: 8,
   },
-  lifetimeDivider: {
-    width: 1,
-    backgroundColor: Colors.surfaceBorder,
-    marginVertical: Spacing.md,
+  offlineSub: {
+    fontSize: 14,
+    color: GREY_TEXT,
+    marginBottom: 32,
+    textAlign: 'center',
   },
-  tipCard: {
-    backgroundColor: Colors.surfaceElevated,
-    borderRadius: Radius.lg,
-    padding: Spacing.lg,
+  goOnlineBtn: {
+    width: '100%',
+    backgroundColor: BRAND_GREEN,
+    paddingVertical: 18,
+    borderRadius: 16,
+    alignItems: 'center',
+    shadowColor: BRAND_GREEN,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+  goOnlineBtnText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+
+  // Online State
+  onlineContainer: {
+    flex: 1,
+    paddingHorizontal: 24,
+    paddingTop: 10,
+  },
+  activeOrderCard: {
+    backgroundColor: '#FFF',
+    borderRadius: 16,
+    padding: 24,
     borderWidth: 1,
-    borderColor: Colors.surfaceBorder,
-    borderLeftWidth: 4,
-    borderLeftColor: Colors.primary,
+    borderColor: BRAND_GREEN,
+    shadowColor: BRAND_GREEN,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 4,
+    minHeight: 200,
   },
-  tipTitle: {
-    fontSize: FontSize.md,
-    fontWeight: FontWeight.bold,
-    color: Colors.textPrimary,
+  activeOrderHeader: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: BRAND_GREEN,
+    marginBottom: 20,
+    textTransform: 'uppercase',
+  },
+  activeOrderContent: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    flex: 1,
+  },
+  orderIconBg: {
+    marginBottom: 16,
+    opacity: 0.5,
+  },
+  orderIconBgActive: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#DCFCE7',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  emptyOrderTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: GREY_TEXT,
     marginBottom: 6,
   },
-  tipText: {
-    fontSize: FontSize.sm,
-    color: Colors.textSecondary,
-    lineHeight: 22,
+  emptyOrderSub: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    textAlign: 'center',
+  },
+  activeOrderTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: DARK_TEXT,
+    marginBottom: 6,
+  },
+  activeOrderSub: {
+    fontSize: 15,
+    color: GREY_TEXT,
+    fontWeight: '500',
   },
 });

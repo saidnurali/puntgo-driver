@@ -10,6 +10,7 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
+  Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -67,10 +68,17 @@ export default function RegisterScreen() {
           </TouchableOpacity>
 
           <View style={styles.header}>
-            <View style={styles.logoCircle}>
-              <Text style={styles.logoText}>PG</Text>
-            </View>
-            <Text style={styles.appName}>Join PuntGo</Text>
+            <Image
+              source={require('../../assets/images/app_logo.png')}
+              style={{
+                width: 120,
+                height: 120,
+                resizeMode: 'contain',
+                alignSelf: 'center',
+                marginBottom: 16,
+              }}
+            />
+            <Text style={styles.appName}>Join PuntEats Driver</Text>
             <Text style={styles.tagline}>Register as a Driver in Garowe</Text>
           </View>
 

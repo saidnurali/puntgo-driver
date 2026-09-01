@@ -1,29 +1,36 @@
 {
   "expo": {
-    "name": "PuntGo Driver",
-    "slug": "puntgo-driver",
+    "name": "PuntEats Driver",
+    "slug": "punteats-driver",
     "version": "1.0.0",
-    "scheme": "puntgodriver",
+    "scheme": "punteatsdriver",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
-    "userInterfaceStyle": "dark",
+    "icon": "./assets/images/app_logo.png",
+    "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/images/app_logo.png",
       "resizeMode": "contain",
-      "backgroundColor": "#0A0E1A"
+      "backgroundColor": "#10B981"
     },
     "ios": {
-      "supportsTablet": true,
+      "supportsTablet": false,
+      "bundleIdentifier": "com.puntgo.punteatsdriver",
+      "icon": "./assets/images/app_logo.png",
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "PuntGo Driver uses your location to show you to passengers and navigate.",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "PuntGo Driver uses your location in the background while a ride is active."
+        "NSLocationWhenInUseUsageDescription": "PuntEats Driver requires background location to track live deliveries and share real-time progress with customers.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "PuntEats Driver requires background location to track live deliveries and share real-time progress with customers.",
+        "UIBackgroundModes": [
+          "location",
+          "remote-notification"
+        ]
       }
     },
     "android": {
+      "package": "com.puntgo.punteatsdriver",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#0A0E1A"
+        "foregroundImage": "./assets/images/app_logo.png",
+        "backgroundColor": "#10B981"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
@@ -32,11 +39,19 @@
         "ACCESS_COARSE_LOCATION",
         "ACCESS_BACKGROUND_LOCATION",
         "RECEIVE_BOOT_COMPLETED",
-        "VIBRATE"
+        "VIBRATE",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_LOCATION",
+        "POST_NOTIFICATIONS",
+        "WAKE_LOCK",
+        "SYSTEM_ALERT_WINDOW",
+        "USE_FULL_SCREEN_INTENT"
       ]
     },
     "web": {
-      "favicon": "./assets/favicon.png",
+      "favicon": "assets/favicon.png",
       "bundler": "metro"
     },
     "plugins": [
@@ -45,10 +60,24 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/icon.png",
-          "color": "#00BFA5"
+          "icon": "./assets/images/app_logo.png",
+          "color": "#10B981",
+          "sounds": [
+            "assets/sounds/order_alert.wav",
+            "assets/sounds/order_alarm.mp3"
+          ]
         }
       ]
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "5d04b108-4a08-42eb-a221-fa3b32cdcdb1"
+      }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "owner": "shiikhdoon"
   }
 }

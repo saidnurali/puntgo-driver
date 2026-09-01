@@ -1,305 +1,470 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
+  TouchableOpacity,
+  FlatList,
   RefreshControl,
+  ActivityIndicator,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useAuth } from '../../contexts/AuthContext';
-import { useRide } from '../../contexts/RideContext';
-import EarningsCard from '../../components/EarningsCard';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
 import { supabase } from '../../lib/supabase';
-import { Colors, FontSize, FontWeight, Radius, Spacing } from '../../constants/theme';
+import { useAuth } from '../../contexts/AuthContext';
+import { useOrder } from '../../contexts/OrderContext';
+import { logger } from '../../utils/logger';
 
-interface EarningsPeriod {
-  label: string;
-  amount: number;
-  rides: number;
-  period: string;
-}
+const BRAND_GREEN = '#1F933F';
+const DARK_TEXT = '#111827';
+const GREY_TEXT = '#6B7280';
+const BORDER = '#E5E7EB';
+const LIGHT_BG = '#F9FAFB';
+
+type TimeFilter = 'today' | 'week' | 'month';
 
 export default function EarningsScreen() {
+  const insets = useSafeAreaInsets();
   const { user } = useAuth();
-  const { todayEarnings, todayRides, driverProfile, refreshProfile } = useRide();
-  const [weeklyData, setWeeklyData] = useState<EarningsPeriod | null>(null);
-  const [monthlyData, setMonthlyData] = useState<EarningsPeriod | null>(null);
-  const [recentRides, setRecentRides] = useState<any[]>([]);
+  const { driverProfile } = useOrder();
+
+  const [activeTab, setActiveTab] = useState<TimeFilter>('today');
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
-  const fetchEarnings = async () => {
-    if (!user) return;
+  const [completedOrdersList, setCompletedOrdersList] = useState<any[]>([]);
 
-    // Weekly
-    const weekStart = new Date();
-    weekStart.setDate(weekStart.getDate() - 7);
-    const { data: weekData } = await supabase
-      .from('rides')
-      .select('estimated_fare, created_at, pickup_address, dropoff_address')
-      .eq('driver_id', user.id)
-      .eq('status', 'completed')
-      .gte('created_at', weekStart.toISOString())
-      .order('created_at', { ascending: false });
+  // Metrics
+  const [totalEarnings, setTotalEarnings] = useState(0);
+  const [deliveries, setDeliveries] = useState(0);
+  const [cashCollected, setCashCollected] = useState(0);
 
-    if (weekData) {
-      setWeeklyData({
-        label: 'This Week',
-        amount: weekData.reduce((s, r) => s + (r.estimated_fare ?? 0), 0),
-        rides: weekData.length,
-        period: formatDateRange(weekStart, new Date()),
-      });
-      setRecentRides(weekData.slice(0, 10));
-    }
+  const calculateMetrics = (data: any[]) => {
+    let earnings = 0;
+    let cash = 0;
 
-    // Monthly
-    const monthStart = new Date();
-    monthStart.setDate(1);
-    monthStart.setHours(0, 0, 0, 0);
-    const { data: monthData } = await supabase
-      .from('rides')
-      .select('estimated_fare')
-      .eq('driver_id', user.id)
-      .eq('status', 'completed')
-      .gte('created_at', monthStart.toISOString());
+    data.forEach((order) => {
+      // Driver ONLY earns the delivery fee + tip
+      const feeEarned = Number(order.delivery_fee || 0.60) + Number(order.tip || 0);
+      earnings += feeEarned;
 
-    if (monthData) {
-      setMonthlyData({
-        label: 'This Month',
-        amount: monthData.reduce((s, r) => s + (r.estimated_fare ?? 0), 0),
-        rides: monthData.length,
-        period: new Date().toLocaleString('default', { month: 'long', year: 'numeric' }),
-      });
-    }
+      if (order.payment_method === 'Cash' || order.payment_method?.toLowerCase() === 'cash') {
+        cash += Number(order.total_price || 0);
+      }
+    });
+
+    setDeliveries(data.length);
+    setTotalEarnings(earnings);
+    setCashCollected(cash);
   };
+
+  const fetchDriverEarnings = useCallback(async (filterType: TimeFilter) => {
+    if (!driverProfile) return;
+    setFetchError(null);
+
+    try {
+      let dateFilter = new Date();
+      if (filterType === 'today') {
+        dateFilter.setHours(0, 0, 0, 0);
+      } else if (filterType === 'week') {
+        dateFilter.setDate(dateFilter.getDate() - 7);
+      } else if (filterType === 'month') {
+        dateFilter.setDate(dateFilter.getDate() - 30);
+      }
+
+      const { data, error } = await supabase
+        .from('orders')
+        .select('*')
+        .or(`driver_name.ilike.%${driverProfile.full_name}%,driver_phone.eq.${driverProfile.phone}`)
+        .eq('status', 'Delivered')
+        .gte('created_at', dateFilter.toISOString())
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        logger.error('[EarningsScreen] fetchDriverEarnings error:', error.message);
+        setFetchError('Failed to load earnings. Tap to retry.');
+        return;
+      }
+
+      if (data) {
+        calculateMetrics(data);
+        setCompletedOrdersList(data);
+      }
+    } catch (err) {
+      logger.error('[EarningsScreen] fetchDriverEarnings unexpected error:', err);
+      setFetchError('Failed to load earnings. Tap to retry.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [driverProfile]);
 
   useEffect(() => {
-    fetchEarnings();
-  }, [user]);
+    if (!driverProfile) return;
+    setLoading(true);
+    fetchDriverEarnings(activeTab);
 
-  const onRefresh = async () => {
+    // Supabase realtime updates
+    const subscription = supabase
+      .channel(`earnings_${Date.now()}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'orders', filter: `status=eq.Delivered` },
+        (payload) => {
+          // Whenever an order status transitions to Delivered, refresh seamlessly
+          fetchDriverEarnings(activeTab);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(subscription);
+    };
+  }, [activeTab, fetchDriverEarnings, driverProfile]);
+
+  const onRefresh = () => {
     setRefreshing(true);
-    await refreshProfile();
-    await fetchEarnings();
-    setRefreshing(false);
+    fetchDriverEarnings(activeTab);
   };
 
-  const totalEarnings = driverProfile?.total_earnings ?? 0;
+  const tabs: { key: TimeFilter; label: string }[] = [
+    { key: 'today', label: 'Today' },
+    { key: 'week', label: 'This Week' },
+    { key: 'month', label: 'This Month' },
+  ];
+  
+  const averagePerDelivery = deliveries > 0 ? totalEarnings / deliveries : 0;
+
+  const renderOrder = ({ item }: { item: any }) => {
+    const isCash = item.payment_method?.toLowerCase() === 'cash';
+  // ✅ FIX: Use String(item.id) — .slice() is undefined on numeric IDs
+    const timestamp = new Date(item.created_at ?? Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const orderDate = new Date(item.created_at ?? Date.now());
+    const today = new Date();
+    let displayDate = `${orderDate.toLocaleDateString()} at ${timestamp}`;
+    if (orderDate.toDateString() === today.toDateString()) {
+      displayDate = `Today at ${timestamp}`;
+    }
+
+    const feeEarned = Number(item.delivery_fee ?? 0.60) + Number(item.tip ?? 0);
+
+    return (
+      <View style={styles.orderCard}>
+        <View style={styles.orderCardHeader}>
+          <Text style={styles.orderId}>#{String(item.id ?? '').slice(0, 8).toUpperCase()}</Text>
+          <Text style={styles.orderTime}>{displayDate}</Text>
+        </View>
+
+        <View style={styles.orderCardBody}>
+          <Text style={styles.restaurantName} numberOfLines={1}>{item.restaurant_name || item.restaurant || 'Unknown Restaurant'}</Text>
+          <Text style={styles.customerArea} numberOfLines={1}>{item.delivery_address || item.address || 'Unknown Area'}</Text>
+        </View>
+
+        <View style={styles.orderCardFooter}>
+          <View style={[styles.badge, isCash ? styles.cashBadge : styles.onlineBadge]}>
+            <Text style={[styles.badgeText, isCash ? styles.cashBadgeText : styles.onlineBadgeText]}>
+              {isCash ? `💵 Cash Collected: $${item.total_price?.toFixed(2) || '0.00'}` : '💳 Online Paid'}
+            </Text>
+          </View>
+          <Text style={styles.feeEarned}>+${feeEarned.toFixed(2)}</Text>
+        </View>
+      </View>
+    );
+  };
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <ScrollView
-        style={styles.scroll}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} colors={[Colors.primary]} />
-        }
-      >
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.title}>Earnings</Text>
-          <Text style={styles.subtitle}>Your earning summary</Text>
-        </View>
+    <SafeAreaView style={styles.safe} edges={['top']}>
+      <StatusBar style="dark" />
+      
+      {/* ── HEADER ── */}
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>Earnings</Text>
+      </View>
 
-        {/* Total Lifetime Banner */}
-        <View style={styles.totalBanner}>
-          <Text style={styles.totalLabel}>Total Lifetime Earnings</Text>
-          <Text style={styles.totalAmount}>${totalEarnings.toFixed(2)}</Text>
-          <Text style={styles.totalRides}>{driverProfile?.total_rides ?? 0} rides completed</Text>
-        </View>
+      {/* ── TABS ── */}
+      <View style={styles.tabContainer}>
+        {tabs.map((tab) => {
+          const isActive = activeTab === tab.key;
+          return (
+            <TouchableOpacity 
+              key={tab.key} 
+              style={[styles.tabBtn, isActive && styles.tabBtnActive]}
+              onPress={() => setActiveTab(tab.key)}
+            >
+              <Text style={[styles.tabText, isActive && styles.tabTextActive]}>
+                {tab.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+      <View style={styles.tabBottomLine} />
 
-        {/* Earnings Cards */}
-        <View style={styles.section}>
-          <EarningsCard
-            label="Today"
-            amount={todayEarnings}
-            rides={todayRides}
-            period={new Date().toLocaleDateString()}
-            highlight
-          />
-          {weeklyData && (
-            <EarningsCard
-              label={weeklyData.label}
-              amount={weeklyData.amount}
-              rides={weeklyData.rides}
-              period={weeklyData.period}
-            />
-          )}
-          {monthlyData && (
-            <EarningsCard
-              label={monthlyData.label}
-              amount={monthlyData.amount}
-              rides={monthlyData.rides}
-              period={monthlyData.period}
-            />
-          )}
+      {/* ── FETCH ERROR STATE ── */}
+      {!!fetchError && (
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>{fetchError}</Text>
+          <TouchableOpacity
+            style={styles.retryBtn}
+            onPress={() => {
+              setLoading(true);
+              setFetchError(null);
+              fetchDriverEarnings(activeTab);
+            }}
+          >
+            <Text style={styles.retryBtnText}>Retry</Text>
+          </TouchableOpacity>
         </View>
+      )}
 
-        {/* Recent Rides */}
-        {recentRides.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Recent Completed Rides</Text>
-            {recentRides.map((ride, index) => (
-              <View key={index} style={styles.rideRow}>
-                <View style={styles.rideIconCircle}>
-                  <Text style={styles.rideIcon}>🚗</Text>
+      {!fetchError && (
+        <FlatList
+          data={completedOrdersList}
+          keyExtractor={(item) => String(item.id)}
+          renderItem={renderOrder}
+          contentContainerStyle={[styles.scroll, { paddingBottom: 90 + insets.bottom }]}
+          showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={BRAND_GREEN} />}
+          ListHeaderComponent={() => (
+            loading ? (
+              <ActivityIndicator size="large" color={BRAND_GREEN} style={{ marginTop: 40 }} />
+            ) : (
+              <View style={styles.card}>
+                <View style={styles.cardTop}>
+                  <Text style={styles.cardLabel}>Total Earnings</Text>
+                  <Text style={styles.totalAmount}>${totalEarnings.toFixed(2)}</Text>
                 </View>
-                <View style={styles.rideInfo}>
-                  <Text style={styles.rideRoute} numberOfLines={1}>
-                    {ride.pickup_address ?? 'Unknown'} → {ride.dropoff_address ?? 'Unknown'}
-                  </Text>
-                  <Text style={styles.rideDate}>{formatRelativeDate(ride.created_at)}</Text>
+
+                <View style={styles.cardDivider} />
+
+                <View style={styles.cardBottom}>
+                  <View style={styles.statCol}>
+                    <Text style={styles.statLabel}>Deliveries</Text>
+                    <Text style={styles.statValue}>{deliveries}</Text>
+                  </View>
+                  <View style={[styles.statCol, { alignItems: 'center' }]}>
+                    <Text style={styles.statLabel}>Average / Delivery</Text>
+                    <Text style={styles.statValue}>${averagePerDelivery.toFixed(2)}</Text>
+                  </View>
+                  <View style={[styles.statCol, { alignItems: 'flex-end' }]}>
+                    <Text style={styles.statLabel}>Cash Collected</Text>
+                    <Text style={styles.statValue}>${cashCollected.toFixed(2)}</Text>
+                  </View>
                 </View>
-                <Text style={styles.rideFare}>${(ride.estimated_fare ?? 0).toFixed(2)}</Text>
               </View>
-            ))}
-          </View>
-        )}
-
-        {recentRides.length === 0 && (
-          <View style={styles.emptyRides}>
-            <Text style={styles.emptyIcon}>💸</Text>
-            <Text style={styles.emptyTitle}>No Rides Yet</Text>
-            <Text style={styles.emptyText}>Complete rides to see your earnings here.</Text>
-          </View>
-        )}
-
-        <View style={{ height: 20 }} />
-      </ScrollView>
+            )
+          )}
+          ListEmptyComponent={() => (
+            !loading ? (
+              <View style={styles.emptyContainer}>
+                <Text style={styles.emptyText}>No delivered orders found for this period.</Text>
+              </View>
+            ) : null
+          )}
+        />
+      )}
     </SafeAreaView>
   );
-}
-
-function formatDateRange(start: Date, end: Date) {
-  const fmt = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  return `${fmt(start)} – ${fmt(end)}`;
-}
-
-function formatRelativeDate(dateStr: string) {
-  const date = new Date(dateStr);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffH = Math.floor(diffMs / (1000 * 60 * 60));
-  if (diffH < 1) return 'Just now';
-  if (diffH < 24) return `${diffH}h ago`;
-  const diffD = Math.floor(diffH / 24);
-  if (diffD === 1) return 'Yesterday';
-  if (diffD < 7) return `${diffD} days ago`;
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: LIGHT_BG,
   },
-  scroll: { flex: 1 },
   header: {
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.lg,
-    paddingBottom: Spacing.md,
-  },
-  title: {
-    fontSize: FontSize.xxxl,
-    fontWeight: FontWeight.extrabold,
-    color: Colors.textPrimary,
-  },
-  subtitle: {
-    fontSize: FontSize.sm,
-    color: Colors.textSecondary,
-    marginTop: 4,
-  },
-  totalBanner: {
-    marginHorizontal: Spacing.lg,
-    marginBottom: Spacing.lg,
-    backgroundColor: `${Colors.primary}15`,
-    borderRadius: Radius.xl,
-    padding: Spacing.xl,
+    paddingVertical: 16,
     alignItems: 'center',
-    borderWidth: 1.5,
-    borderColor: `${Colors.primary}40`,
+    backgroundColor: '#FFF',
   },
-  totalLabel: {
-    fontSize: FontSize.sm,
-    color: Colors.primary,
-    fontWeight: FontWeight.semibold,
-    letterSpacing: 0.5,
-    marginBottom: Spacing.sm,
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: DARK_TEXT,
+  },
+  tabContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    backgroundColor: '#FFF',
+  },
+  tabBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  tabBtnActive: {
+    borderBottomWidth: 2,
+    borderBottomColor: BRAND_GREEN,
+  },
+  tabText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: GREY_TEXT,
+  },
+  tabTextActive: {
+    color: BRAND_GREEN,
+  },
+  tabBottomLine: {
+    height: 1,
+    backgroundColor: BORDER,
+    width: '100%',
+    marginTop: -1, // overlap the active border
+    zIndex: -1,
+  },
+  scroll: {
+    paddingHorizontal: 16,
+    paddingTop: 24,
+    paddingBottom: 40,
+  },
+  card: {
+    backgroundColor: '#FFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#F3F4F6',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04,
+    shadowRadius: 12,
+    elevation: 4,
+    marginBottom: 24,
+  },
+  cardTop: {
+    paddingVertical: 24,
+    alignItems: 'center',
+  },
+  cardLabel: {
+    fontSize: 13,
+    color: GREY_TEXT,
+    fontWeight: '600',
+    marginBottom: 8,
   },
   totalAmount: {
-    fontSize: 48,
-    fontWeight: FontWeight.extrabold,
-    color: Colors.textPrimary,
-    letterSpacing: -1,
+    fontSize: 42,
+    fontWeight: '800',
+    color: BRAND_GREEN,
   },
-  totalRides: {
-    fontSize: FontSize.sm,
-    color: Colors.textSecondary,
-    marginTop: 4,
+  cardDivider: {
+    height: 1,
+    backgroundColor: '#F3F4F6',
+    marginHorizontal: 20,
   },
-  section: {
-    paddingHorizontal: Spacing.lg,
-    marginBottom: Spacing.md,
-  },
-  sectionTitle: {
-    fontSize: FontSize.sm,
-    fontWeight: FontWeight.semibold,
-    color: Colors.textSecondary,
-    letterSpacing: 0.8,
-    textTransform: 'uppercase',
-    marginBottom: Spacing.sm,
-  },
-  rideRow: {
+  cardBottom: {
     flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.surface,
-    borderRadius: Radius.md,
-    padding: Spacing.md,
-    marginBottom: Spacing.sm,
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 20,
+  },
+  statCol: {
+    flex: 1,
+  },
+  statLabel: {
+    fontSize: 11,
+    color: GREY_TEXT,
+    fontWeight: '600',
+    marginBottom: 6,
+  },
+  statValue: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: DARK_TEXT,
+  },
+  orderCard: {
+    backgroundColor: '#FFF',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
     borderWidth: 1,
-    borderColor: Colors.surfaceBorder,
-    gap: Spacing.sm,
+    borderColor: '#E5E7EB',
   },
-  rideIconCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: Colors.surfaceElevated,
+  orderCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  orderId: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: DARK_TEXT,
+  },
+  orderTime: {
+    fontSize: 12,
+    color: GREY_TEXT,
+  },
+  orderCardBody: {
+    marginBottom: 16,
+  },
+  restaurantName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: DARK_TEXT,
+    marginBottom: 4,
+  },
+  customerArea: {
+    fontSize: 13,
+    color: GREY_TEXT,
+  },
+  orderCardFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    justifyContent: 'center',
   },
-  rideIcon: { fontSize: 18 },
-  rideInfo: { flex: 1 },
-  rideRoute: {
-    fontSize: FontSize.sm,
-    color: Colors.textPrimary,
-    fontWeight: FontWeight.medium,
+  badge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
   },
-  rideDate: {
-    fontSize: FontSize.xs,
-    color: Colors.textMuted,
-    marginTop: 2,
+  cashBadge: {
+    backgroundColor: '#DCFCE7',
   },
-  rideFare: {
-    fontSize: FontSize.md,
-    fontWeight: FontWeight.bold,
-    color: Colors.success,
+  onlineBadge: {
+    backgroundColor: '#DBEAFE',
   },
-  emptyRides: {
+  cashBadgeText: {
+    color: '#166534',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  onlineBadgeText: {
+    color: '#1E40AF',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  feeEarned: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: BRAND_GREEN,
+  },
+  emptyContainer: {
+    padding: 40,
     alignItems: 'center',
-    paddingVertical: Spacing.xxl,
-  },
-  emptyIcon: { fontSize: 48, marginBottom: Spacing.md },
-  emptyTitle: {
-    fontSize: FontSize.xl,
-    fontWeight: FontWeight.bold,
-    color: Colors.textSecondary,
-    marginBottom: Spacing.sm,
   },
   emptyText: {
-    fontSize: FontSize.sm,
-    color: Colors.textMuted,
+    color: GREY_TEXT,
+    fontSize: 14,
+  },
+  errorContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 32,
+    gap: 16,
+  },
+  errorText: {
+    fontSize: 15,
+    color: GREY_TEXT,
     textAlign: 'center',
-    paddingHorizontal: Spacing.xl,
+    fontWeight: '500',
+  },
+  retryBtn: {
+    backgroundColor: BRAND_GREEN,
+    borderRadius: 10,
+    paddingHorizontal: 28,
+    paddingVertical: 12,
+  },
+  retryBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 15,
   },
 });

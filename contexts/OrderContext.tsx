@@ -766,8 +766,10 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   };
 
   // ─── GPS Location Broadcasting ────────────────────────────────────
-  // Watches driver position while online with an active order and upserts
-  // to driver_locations table so customers can track their delivery.
+  // Watches driver position while online with an active order and writes
+  // lat/lng/heading to orders.driver_latitude/longitude/heading — the exact
+  // columns the Customer App's OrderTracking screen subscribes to via
+  // postgres_changes on the orders table, enabling end-to-end live tracking.
   // The hook automatically stops when driverStatus goes offline or
   // currentOrder becomes null (delivery completed / no active order).
   useLocationBroadcast({

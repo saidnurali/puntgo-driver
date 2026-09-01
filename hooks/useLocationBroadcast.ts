@@ -2,16 +2,34 @@
  * useLocationBroadcast
  *
  * Starts a high-accuracy GPS watcher when a driver has an active order and
- * is online. Upserts driver_locations in Supabase on each significant move.
+ * is online. Writes live position to orders.driver_latitude/longitude/heading —
+ * the exact columns the Customer App (PuntEats) reads in its OrderTracking
+ * screen via a postgres_changes UPDATE subscription on the `orders` table.
  *
- * Rules (per task spec):
+ * WHY orders, not driver_locations:
+ *   The customer app's OrderTracking.tsx selects driver_latitude/longitude/heading
+ *   directly from the orders row and updates the map marker via a realtime UPDATE
+ *   subscription on that same row. Writing to a separate driver_locations table
+ *   (which the customer app never reads) would mean live tracking silently fails
+ *   end-to-end despite both sides individually functioning.
+ *
+ * Rules:
  *  • Starts only when driverStatus === 'online' AND currentOrderId is not null.
  *  • Updates at most every 10 seconds AND only if the driver moved ≥ 20 meters
  *    (whichever is less frequent), conserving battery & Realtime message volume.
  *  • Stops (and removes the watcher) when either condition becomes false.
- *  • Does NOT silently request permissions — caller must have requested them
- *    before this hook will start (it checks the current permission status
- *    and returns early if not granted).
+ *  • Does NOT silently request permissions — caller must have already requested
+ *    them via requestLocationPermissions() before going online.
+ *
+ * Exact query sent on each GPS update:
+ *   supabase.from('orders')
+ *     .update({ driver_latitude: lat, driver_longitude: lng, driver_heading: heading })
+ *     .eq('id', currentOrderId)
+ *     .eq('driver_id', userId)
+ *
+ * The .eq('driver_id', userId) guard ensures a driver can only write location
+ * to an order actually assigned to them — matching the RLS pattern used
+ * in the rest of this app and enforced server-side by the orders RLS policy.
  */
 
 import { useEffect, useRef } from 'react';
@@ -48,8 +66,7 @@ export function useLocationBroadcast({
       return;
     }
 
-    // Already watching — nothing to do (the effect re-runs when currentOrderId changes,
-    // so we stop the old one and start a new one automatically)
+    // Re-run when currentOrderId changes — tear down the old watcher first
     if (watcherRef.current) {
       watcherRef.current.remove();
       watcherRef.current = null;
@@ -59,8 +76,8 @@ export function useLocationBroadcast({
 
     async function startWatcher() {
       // Check permissions before starting — do NOT request here;
-      // permissions must be requested via the explicit permission flow
-      // (requestLocationPermissions) before the driver goes online.
+      // permissions must be requested via requestLocationPermissions() before
+      // the driver goes online (see OrderContext.tsx).
       const { status: fgStatus } = await Location.getForegroundPermissionsAsync();
       if (fgStatus !== 'granted') {
         logger.warn('[LocationBroadcast] Foreground location permission not granted — skipping GPS watcher');
@@ -82,23 +99,24 @@ export function useLocationBroadcast({
             const { latitude, longitude, heading } = location.coords;
 
             logger.debug(
-              `[LocationBroadcast] GPS update: lat=${latitude.toFixed(5)}, lng=${longitude.toFixed(5)}, heading=${heading ?? 'N/A'}`
+              `[LocationBroadcast] GPS update → orders row: lat=${latitude.toFixed(5)}, lng=${longitude.toFixed(5)}, heading=${heading ?? 'N/A'}`
             );
 
-            const { error } = await supabase.from('driver_locations').upsert(
-              {
-                driver_id: userId,
-                order_id: currentOrderId,
-                latitude,
-                longitude,
-                heading: heading ?? null,
-                updated_at: new Date().toISOString(),
-              },
-              { onConflict: 'driver_id' }
-            );
+            // Write to orders.driver_latitude/longitude/heading — the columns the
+            // Customer App's OrderTracking screen subscribes to via postgres_changes.
+            // .eq('driver_id', userId) prevents writing to an order not assigned to this driver.
+            const { error } = await supabase
+              .from('orders')
+              .update({
+                driver_latitude: latitude,
+                driver_longitude: longitude,
+                driver_heading: heading ?? null,
+              })
+              .eq('id', currentOrderId)
+              .eq('driver_id', userId);
 
             if (error) {
-              logger.warn('[LocationBroadcast] Upsert to driver_locations failed:', error.message);
+              logger.warn('[LocationBroadcast] Failed to update driver location on orders row:', error.message);
             }
           }
         );

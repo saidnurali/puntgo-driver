@@ -76,12 +76,6 @@ export default function TabsLayout() {
       />
 
       {/* ── Hidden screens (no tab button) ── */}
-      <Tabs.Screen
-        name="active-ride"
-        options={{
-          href: null, // Completely removes it from the tab bar
-        }}
-      />
     </Tabs>
   );
 }
